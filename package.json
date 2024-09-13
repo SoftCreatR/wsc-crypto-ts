@@ -1,0 +1,29 @@
+{
+  "name": "wsc-crypto-ts",
+  "version": "1.0.0",
+  "description": "PoC of cryptographic utility functions for WoltLab Suite Core, implemented in TypeScript.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "author": "Sascha Greuel <hello@1-2.dev>",
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SoftCreatR/wsc-crypto-ts.git"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node test.js",
+    "test": "npm run build && npm start"
+  },
+  "keywords": [
+    "cryptography",
+    "typescript",
+    "woltlab",
+    "wsc",
+    "crypto"
+  ],
+  "devDependencies": {
+    "@types/node": "^22.5.4",
+    "typescript": "^5.6.2"
+  }
+}
