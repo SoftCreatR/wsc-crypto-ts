@@ -1,99 +1,106 @@
 /**
- *  ISC License
+ * ISC License
  *
- *  Permission to use, copy, modify, and/or distribute this software for any
- *  purpose with or without fee is hereby granted, provided that the above
- *  copyright
- *  notice and this permission notice appear in all copies.
+ * Copyright (c) 2024-2026 Sascha Greuel
  *
- *  THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- *  WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- *  MERCHANTABILITY
- *  AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL,
- *  DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER
- *  RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF
- *  CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
- *  CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Permission to use, copy, modify, and/or distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+ * SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
+ * OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
+ * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/**
- * Class Hex
- *
- * Provides hexadecimal encoding and decoding without cache-timing leaks.
- *
- * @author Sascha Greuel
- * @license ISC
- */
-export class Hex {
-  /**
-   * Convert a binary string into a hexadecimal string without cache-timing leaks.
-   *
-   * @param {Buffer} binString (raw binary)
-   * @returns {string}
-   * @throws {TypeError}
-   */
-  static encode(binString: Buffer): string {
+/** Hexadecimal encoding compatible with WSC 6.2's constant-time encoder. */
+export abstract class Hex {
+  /** Encodes bytes as lowercase hexadecimal. */
+  static encode(binary: Uint8Array): string {
     let hex = '';
-    const len = binString.length;
-    for (let i = 0; i < len; ++i) {
-      const c = binString[i];
-      const b = c >> 4;
-      const c_low = c & 0xf;
+
+    for (const byte of binary) {
+      const high = byte >> 4;
+      const low = byte & 0x0f;
 
       hex += String.fromCharCode(
-          87 + b + (((b - 10) >> 8) & ~38),
-          87 + c_low + (((c_low - 10) >> 8) & ~38)
+        87 + high + (((high - 10) >> 8) & ~38),
+        87 + low + (((low - 10) >> 8) & ~38),
       );
     }
+
+    return hex;
+  }
+
+  /** Encodes bytes as uppercase hexadecimal. */
+  static encodeUpper(binary: Uint8Array): string {
+    let hex = '';
+
+    for (const byte of binary) {
+      const high = byte >> 4;
+      const low = byte & 0x0f;
+
+      hex += String.fromCharCode(
+        55 + high + (((high - 10) >> 8) & ~6),
+        55 + low + (((low - 10) >> 8) & ~6),
+      );
+    }
+
     return hex;
   }
 
   /**
-   * Convert a hexadecimal string into a binary Buffer without cache-timing leaks.
-   *
-   * @param {string} encodedString
-   * @param {boolean} strictPadding
-   * @returns {Buffer} (raw binary)
-   * @throws {RangeError}
+   * Decodes hexadecimal bytes. Odd-length values receive a leading zero unless
+   * `strictPadding` is enabled, matching WSC 6.2.
    */
-  static decode(encodedString: string, strictPadding: boolean = false): Buffer {
-    let hex_pos = 0;
-    let binArray: number[] = [];
-    let c_acc = 0;
-    let state = 0;
-    let hex_len = encodedString.length;
+  static decode(encodedString: string, strictPadding = false): Buffer {
+    let hex = encodedString;
 
-    // Ensure the hex string has an even length
-    if (hex_len % 2 !== 0) {
+    if ((hex.length & 1) !== 0) {
       if (strictPadding) {
         throw new RangeError('Expected an even number of hexadecimal characters');
-      } else {
-        encodedString = '0' + encodedString;
-        ++hex_len;
       }
+
+      hex = `0${hex}`;
     }
 
-    // Process each character
-    while (hex_pos < hex_len) {
-      const c = encodedString.charCodeAt(hex_pos++);
-      const c_num = c ^ 48; // XOR with '0'
-      const c_num0 = (c_num - 10) >> 8;
-      const c_alpha = (c & ~32) - 55;
-      const c_alpha0 = ((c_alpha - 10) ^ (c_alpha - 16)) >> 8;
+    const binary = Buffer.alloc(hex.length / 2);
+    let accumulator = 0;
+    let state = 0;
+    let outputPosition = 0;
 
-      if ((c_num0 | c_alpha0) === 0) {
+    for (let position = 0; position < hex.length; position += 1) {
+      const character = hex.charCodeAt(position);
+
+      // The bit masks below operate on bytes in the upstream algorithm. Reject
+      // non-ASCII code units explicitly before applying the same conversion.
+      if (character > 0x7f) {
         throw new RangeError('Expected hexadecimal character');
       }
 
-      const c_val = (c_num0 & c_num) | (c_alpha & c_alpha0);
+      const numeric = character ^ 48;
+      const numericMask = (numeric - 10) >> 8;
+      const alpha = (character & ~32) - 55;
+      const alphaMask = ((alpha - 10) ^ (alpha - 16)) >> 8;
+
+      if ((numericMask | alphaMask) === 0) {
+        throw new RangeError('Expected hexadecimal character');
+      }
+
+      const value = (numericMask & numeric) | (alphaMask & alpha);
+
       if (state === 0) {
-        c_acc = c_val << 4;
+        accumulator = value * 16;
       } else {
-        binArray.push(c_acc | c_val);
+        binary[outputPosition] = accumulator | value;
+        outputPosition += 1;
       }
       state ^= 1;
     }
 
-    return Buffer.from(binArray);
+    return binary;
   }
 }
